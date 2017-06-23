@@ -316,6 +316,35 @@ zyre_gossip_connect (zyre_t *self, const char *format, ...)
     free (string);
 }
 
+//  --------------------------------------------------------------------------
+//  Set-up gossip by loading a configuration file.  For details of the gossip
+//  network design, see the CZMQ zgossip class.
+
+void
+zyre_gossip_load (zyre_t *self, const char *format, ...)
+{
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    char *string = zsys_vprintf (format, argptr);
+    va_end (argptr);
+
+    zstr_sendx (self->actor, "GOSSIP LOAD", string, NULL);
+    free (string);
+}
+
+void
+zyre_set_keyfile( zyre_t *self, const char *format, ...)
+{
+    assert (self);
+    va_list argptr;
+    va_start (argptr, format);
+    char *string = zsys_vprintf (format, argptr);
+    va_end (argptr);
+
+    zstr_sendx (self->actor, "SET KEYFILE", string, NULL);
+    free (string);
+}
 
 //  --------------------------------------------------------------------------
 //  Start node, after setting header values. When you start a node it

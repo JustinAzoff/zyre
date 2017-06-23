@@ -30,7 +30,7 @@ void
 
 //  Connect peer mailbox
 int
-    zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint64_t expired_timeout);
+    zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, const char *public_key, zcert_t *private_key, uint64_t expired_timeout);
 
 //  Connect peer mailbox
 void

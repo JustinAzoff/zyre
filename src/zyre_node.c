@@ -44,6 +44,8 @@ struct _zyre_node_t {
     zactor_t *gossip;           //  Gossip discovery service, if any
     char *gossip_bind;          //  Gossip bind endpoint, if any
     char *gossip_connect;       //  Gossip connect endpoint, if any
+    char *gossip_load;          //  Gossip config file, if any
+    zcert_t *cert;              //  keypair, if any
 };
 
 //  Beacon frame has this format:
@@ -136,6 +138,7 @@ zyre_node_destroy (zyre_node_t **self_p)
         zstr_free (&self->endpoint);
         zstr_free (&self->gossip_bind);
         zstr_free (&self->gossip_connect);
+        zstr_free (&self->gossip_load);
         free (self->name);
         free (self);
         *self_p = NULL;
@@ -184,13 +187,19 @@ zyre_node_start (zyre_node_t *self)
                 iface = "*";
             self->port = zsock_bind (self->inbox, "tcp://%s:*", iface);
             assert (self->port > 0);    //  Die on bad interface or port exhaustion
-
             char *hostname = zsys_hostname ();
             self->endpoint = zsys_sprintf ("tcp://%s:%d", hostname, self->port);
             zstr_free (&hostname);
         }
         assert (self->gossip);
-        zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), self->endpoint, NULL);
+        if(self->cert) {
+            char *published_endpoint = zsys_sprintf("%s|%s", self->endpoint, zcert_public_txt(self->cert));
+            zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), published_endpoint, NULL);
+            zstr_free(&published_endpoint);
+        } else {
+            zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), self->endpoint, NULL);
+        }
+
         //  Start polling on zgossip
         zpoller_add (self->poller, self->gossip);
         //  Start polling on inbox
@@ -277,6 +286,8 @@ zyre_node_dump (zyre_node_t *self)
             zsys_info ("   - bind endpoint=%s", self->gossip_bind);
         if (self->gossip_connect)
             zsys_info ("   - connect endpoint=%s", self->gossip_connect);
+        if (self->gossip_load)
+            zsys_info ("   - load file=%s", self->gossip_load);
     }
     zsys_info (" - headers=%zu:", zhash_size (self->headers));
     for (item = zhash_first (self->headers); item != NULL;
@@ -399,6 +410,26 @@ zyre_node_recv_api (zyre_node_t *self)
         zstr_free (&self->gossip_connect);
         self->gossip_connect = zmsg_popstr (request);
         zstr_sendx (self->gossip, "CONNECT", self->gossip_connect, NULL);
+    }
+    else
+    if (streq (command, "GOSSIP LOAD")) {
+        zyre_node_gossip_start (self);
+        zstr_free (&self->gossip_load);
+        self->gossip_load = zmsg_popstr (request);
+        zstr_sendx (self->gossip, "LOAD", self->gossip_load, NULL);
+    }
+    else
+    if (streq (command, "SET KEYFILE")) {
+        char *filename = zmsg_popstr(request);
+        self->cert = zcert_load(filename);
+        if(!self->cert) {
+            zsys_error ("invalid certificate '%s'", filename);
+            assert(self->cert);
+        } else {
+            zcert_apply(self->cert, self->inbox);
+            zsock_set_curve_server(self->inbox, 1);
+        }
+        zstr_free (&filename);
     }
     else
     if (streq (command, "START"))
@@ -557,7 +588,7 @@ zyre_node_purge_peer (const char *key, void *item, void *argument)
 //  Find or create peer via its UUID
 
 static zyre_peer_t *
-zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
+zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, const char *public_key)
 {
     assert (self);
     assert (endpoint);
@@ -574,7 +605,7 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
         assert (peer);
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
-        int rc = zyre_peer_connect (peer, self->uuid, endpoint,
+        int rc = zyre_peer_connect (peer, self->uuid, endpoint, public_key, self->cert,
                 self->expired_timeout);
         if (rc != 0) {
             // TBD: removing the peer means it will keep retrying. Should
@@ -741,7 +772,7 @@ zyre_node_recv_peer (zyre_node_t *self)
                 return;
             }
         }
-        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg));
+        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), NULL);
         if (peer)
             zyre_peer_set_ready (peer, true);
     }
@@ -856,7 +887,7 @@ zyre_node_recv_beacon (zyre_node_t *self)
         char endpoint [NI_MAXHOST];
         sprintf (endpoint, "tcp://%s:%d", ipaddress, ntohs (beacon.port));
 
-        zyre_peer_t *peer = zyre_node_require_peer (self, uuid, endpoint);
+        zyre_peer_t *peer = zyre_node_require_peer (self, uuid, endpoint, NULL);
         if (peer)
             zyre_peer_refresh (peer, self->evasive_timeout,
                     self->expired_timeout);
@@ -889,11 +920,18 @@ zyre_node_recv_gossip (zyre_node_t *self)
     //  messages come from zgossip, not an external source
     assert (streq (command, "DELIVER"));
 
+    char *public_key = NULL;
+    char *pipe = strchr(endpoint, '|');
+    if(pipe != NULL) {
+        *pipe = '\0';
+        public_key = pipe+1;
+    }
+
     //  Require peer, if it's not us
     if (strneq (endpoint, self->endpoint)) {
         zuuid_t *uuid = zuuid_new ();
         zuuid_set_str (uuid, uuidstr);
-        zyre_node_require_peer (self, uuid, endpoint);
+        zyre_node_require_peer (self, uuid, endpoint, public_key);
         zuuid_destroy (&uuid);
     }
     zstr_free (&command);

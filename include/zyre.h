@@ -118,6 +118,14 @@ ZYRE_EXPORT void
 ZYRE_EXPORT void
     zyre_gossip_connect (zyre_t *self, const char *format, ...) CHECK_PRINTF (2);
 
+//  Set-up gossip by loading a configuration file.  For details of the gossip
+//  network design, see the CZMQ zgossip class.
+ZYRE_EXPORT void
+    zyre_gossip_load (zyre_t *self, const char *format, ...) CHECK_PRINTF (2);
+
+ZYRE_EXPORT void
+    zyre_set_keyfile (zyre_t *self, const char *format, ...) CHECK_PRINTF (2);
+
 //  Start node, after setting header values. When you start a node it
 //  begins discovery and connection. Returns 0 if OK, -1 if it wasn't
 //  possible to start the node.                                      

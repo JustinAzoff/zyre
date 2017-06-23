@@ -94,7 +94,7 @@ zyre_peer_destroy (zyre_peer_t **self_p)
 //  Configures mailbox and connects to peer's router endpoint
 
 int
-zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint64_t expired_timeout)
+zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, const char *public_key, zcert_t *private_key, uint64_t expired_timeout)
 {
     assert (self);
     assert (!self->connected);
@@ -141,6 +141,14 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
     zrex_destroy (&rex);
 
     //  Connect through to peer node
+    if(private_key) {
+        zcert_apply (private_key, self->mailbox);
+    }
+
+    if(public_key) {
+        zsys_debug("(%s) Using key [%s] for endpoint %s", self->origin, public_key, endpoint);
+        zsock_set_curve_serverkey (self->mailbox, public_key);
+    }
     rc = zsock_connect (self->mailbox, "%s", endpoint_iface);
     if (rc != 0) {
         zsys_debug ("(%s) cannot connect to endpoint=%s",
@@ -470,7 +478,7 @@ zyre_peer_test (bool verbose)
     zuuid_t *me = zuuid_new ();
     zyre_peer_t *peer = zyre_peer_new (peers, you);
     assert (!zyre_peer_connected (peer));
-    assert (!zyre_peer_connect (peer, me, "tcp://127.0.0.1:5551", 30000));
+    assert (!zyre_peer_connect (peer, me, "tcp://127.0.0.1:5551", NULL, NULL, 30000));
     assert (zyre_peer_connected (peer));
     zyre_peer_set_name (peer, "peer");
     assert (streq (zyre_peer_name (peer), "peer"));
