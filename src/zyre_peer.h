@@ -30,7 +30,7 @@ void
 
 //  Connect peer mailbox
 int
-    zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, const char *public_key, zcert_t *private_key, uint64_t expired_timeout);
+    zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, zcert_t *private_key, uint64_t expired_timeout);
 
 //  Connect peer mailbox
 void
@@ -111,6 +111,10 @@ bool
 //  Ask peer to log all traffic via zsys
 void
     zyre_peer_set_verbose (zyre_peer_t *self, bool verbose);
+
+//  Set the public key for the remote endpoint
+void
+    zyre_peer_set_public_key (zyre_peer_t *self, char *public_key);
 
 //  Self test of this class
 ZYRE_EXPORT void

@@ -588,7 +588,7 @@ zyre_node_purge_peer (const char *key, void *item, void *argument)
 //  Find or create peer via its UUID
 
 static zyre_peer_t *
-zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, const char *public_key)
+zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, char *public_key)
 {
     assert (self);
     assert (endpoint);
@@ -605,7 +605,8 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, 
         assert (peer);
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
-        int rc = zyre_peer_connect (peer, self->uuid, endpoint, public_key, self->cert,
+        zyre_peer_set_public_key(peer, public_key);
+        int rc = zyre_peer_connect (peer, self->uuid, endpoint, self->cert,
                 self->expired_timeout);
         if (rc != 0) {
             // TBD: removing the peer means it will keep retrying. Should

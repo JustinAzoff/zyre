@@ -22,6 +22,7 @@ struct _zyre_peer_t {
     zsock_t *mailbox;           //  Socket through to peer
     zuuid_t *uuid;              //  Identity object
     char *endpoint;             //  Endpoint connected to
+    char *public_key;           //  Public key of the endpoint
     char *name;                 //  Peer's public name
     char *origin;               //  Origin node's public name
     uint64_t evasive_at;        //  Peer is being evasive
@@ -94,7 +95,7 @@ zyre_peer_destroy (zyre_peer_t **self_p)
 //  Configures mailbox and connects to peer's router endpoint
 
 int
-zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, const char *public_key, zcert_t *private_key, uint64_t expired_timeout)
+zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, zcert_t *private_key, uint64_t expired_timeout)
 {
     assert (self);
     assert (!self->connected);
@@ -145,9 +146,9 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, const
         zcert_apply (private_key, self->mailbox);
     }
 
-    if(public_key) {
-        zsys_debug("(%s) Using key [%s] for endpoint %s", self->origin, public_key, endpoint);
-        zsock_set_curve_serverkey (self->mailbox, public_key);
+    if(self->public_key) {
+        zsys_debug("(%s) Using key [%s] for endpoint %s", self->origin, self->public_key, endpoint);
+        zsock_set_curve_serverkey (self->mailbox, self->public_key);
     }
     rc = zsock_connect (self->mailbox, "%s", endpoint_iface);
     if (rc != 0) {
@@ -465,6 +466,18 @@ zyre_peer_set_verbose (zyre_peer_t *self, bool verbose)
 
 
 //  --------------------------------------------------------------------------
+//  Set the public key for the remote endpoint
+
+void
+zyre_peer_set_public_key (zyre_peer_t *self, char *public_key)
+{
+    assert (self);
+    self->public_key = public_key;
+}
+
+
+
+//  --------------------------------------------------------------------------
 //  Self test of this class
 
 void
@@ -478,7 +491,7 @@ zyre_peer_test (bool verbose)
     zuuid_t *me = zuuid_new ();
     zyre_peer_t *peer = zyre_peer_new (peers, you);
     assert (!zyre_peer_connected (peer));
-    assert (!zyre_peer_connect (peer, me, "tcp://127.0.0.1:5551", NULL, NULL, 30000));
+    assert (!zyre_peer_connect (peer, me, "tcp://127.0.0.1:5551", NULL, 30000));
     assert (zyre_peer_connected (peer));
     zyre_peer_set_name (peer, "peer");
     assert (streq (zyre_peer_name (peer), "peer"));
