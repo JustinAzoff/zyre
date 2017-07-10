@@ -281,8 +281,7 @@ int
 zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)
 {
     assert (self);
-    zstr_sendx (self->actor, "REQUIRE PEER", uuid, endpoint, NULL);
-    return 0;
+    return zstr_sendx (self->actor, "REQUIRE PEER", uuid, endpoint, NULL);
 }
 
 //  --------------------------------------------------------------------------
