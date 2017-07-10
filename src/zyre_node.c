@@ -550,6 +550,19 @@ zyre_node_recv_api (zyre_node_t *self)
         zstr_free (&name);
     }
     else
+    if (streq (command, "REQUIRE PEER")) {
+        char *uuidstr = zmsg_popstr (request);
+        char *endpoint = zmsg_popstr (request);
+        if (strneq (endpoint, self->endpoint)) {
+            zuuid_t *uuid = zuuid_new ();
+            zuuid_set_str (uuid, uuidstr);
+            zyre_node_require_peer (self, uuid, endpoint);
+            zuuid_destroy (&uuid);
+        }
+        zstr_free (&uuidstr);
+        zstr_free (&endpoint);
+    }
+    else
     if (streq (command, "PEERS"))
         zsock_send (self->pipe, "p", zhash_keys (self->peers));
     else
