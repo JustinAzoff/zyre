@@ -605,7 +605,8 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, 
         assert (peer);
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
-        zyre_peer_set_public_key(peer, public_key);
+        if(public_key)
+            zyre_peer_set_public_key(peer, public_key);
         int rc = zyre_peer_connect (peer, self->uuid, endpoint, self->cert,
                 self->expired_timeout);
         if (rc != 0) {
