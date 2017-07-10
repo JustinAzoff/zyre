@@ -276,6 +276,9 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
     free (string);
     return zsock_wait (self->actor) == 0? 0: -1;
 }
+//
+//  --------------------------------------------------------------------------
+//  Find or create peer via its UUID
 
 int
 zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)
