@@ -44,11 +44,9 @@ struct _zyre_node_t {
     zactor_t *gossip;           //  Gossip discovery service, if any
     char *gossip_bind;          //  Gossip bind endpoint, if any
     char *gossip_connect;       //  Gossip connect endpoint, if any
-    char *gossip_key_public;    //  Gossip public key, if any
-    char *gossip_key_private;   //  Gossip private key, if any
 
     char *curve_key_public;
-    char *curve_key_private;
+    char *curve_key_secret;
 };
 
 //  Beacon frame has this format:
@@ -57,6 +55,7 @@ struct _zyre_node_t {
 //  version     1 byte, %x01
 //  UUID        16 bytes
 //  port        2 bytes in network order
+//  curve key   32 bytes
 
 #define BEACON_VERSION 0x01
 
@@ -65,6 +64,8 @@ typedef struct {
     byte version;
     byte uuid [ZUUID_LEN];
     uint16_t port;
+
+    byte curve_key [32];
 } beacon_t;
 
 //  --------------------------------------------------------------------------
@@ -141,7 +142,7 @@ zyre_node_destroy (zyre_node_t **self_p)
         zstr_free (&self->endpoint);
         zstr_free (&self->gossip_bind);
         zstr_free (&self->gossip_connect);
-        zstr_free (&self->curve_key_private);
+        zstr_free (&self->curve_key_secret);
         zstr_free (&self->curve_key_public);
         free (self->name);
         free (self);
@@ -169,6 +170,18 @@ zyre_node_gossip_start (zyre_node_t *self)
 static int
 zyre_node_start (zyre_node_t *self)
 {
+    if (self->curve_key_secret) {
+        byte public_key [32] = { 0 };
+        byte secret_key [32] = { 0 };
+        zmq_z85_decode (public_key, self->curve_key_public);
+        zmq_z85_decode (secret_key, self->curve_key_secret);
+
+        zcert_t *cert = zcert_new_from(public_key, secret_key);
+        zcert_apply(cert, self->inbox);
+
+        zsys_info ("setting curve server");
+        zsock_set_curve_server (self->inbox, 1);
+    }
     if (self->beacon_port) {
         //  Start beacon discovery
         //  ------------------------------------------------------------------
@@ -203,6 +216,10 @@ zyre_node_start (zyre_node_t *self)
         //  Start polling on inbox
         zpoller_add(self->poller, self->inbox);
     }
+
+    if (self->curve_key_secret)
+        assert (zsock_mechanism (self->inbox) == ZMQ_CURVE);
+
     return 0;
 }
 
@@ -381,6 +398,8 @@ zyre_node_recv_api (zyre_node_t *self)
     }
     else
     if (streq (command, "SET ENDPOINT")) {
+        // TODO- curve?
+
         zyre_node_gossip_start (self);
         char *endpoint = zmsg_popstr (request);
         if (zsock_bind (self->inbox, "%s", endpoint) != -1) {
@@ -395,31 +414,27 @@ zyre_node_recv_api (zyre_node_t *self)
     }
     else
     if (streq (command, "CURVE KEY PUBLIC")) {
-        char *key = zmsg_popstr (request);
-        self->curve_key_public = key;
-        zstr_free (&key);
+        self->curve_key_public = zmsg_popstr (request);
+        assert (self->curve_key_public);
+        zsys_debug ("setting public key: %s", self->curve_key_public);
     }
     else
-    if (streq (command, "CURVE KEY PRIVATE")) {
-        char *key = zmsg_popstr (request);
-        self->curve_key_private = key;
-        zstr_free (&key);
-    }
-    else
-    if (streq (command, "GOSSIP CURVE KEY PUBLIC")) {
-        self->gossip_key_public = zmsg_popstr (request);
-        zstr_sendx (self->gossip, "CURVE KEY PUBLIC", NULL);
-    }
-    else
-    if (streq (command, "GOSSIP CURVE KEY PRIVATE")) {
-        self->gossip_key_private = zmsg_popstr (request);
-        zstr_sendx (self->gossip, "CURVE KEY PRIVATE", NULL);
+    if (streq (command, "CURVE KEY SECRET")) {
+        self->curve_key_secret = zmsg_popstr (request);
+        assert (self->curve_key_secret);
+        zsys_debug ("setting public key: %s", self->curve_key_secret);
     }
     else
     if (streq (command, "GOSSIP BIND")) {
         zyre_node_gossip_start (self);
         zstr_free (&self->gossip_bind);
         self->gossip_bind = zmsg_popstr (request);
+
+        if (self->curve_key_secret) {
+            zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
+            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
+        }
+
         zstr_sendx (self->gossip, "BIND", self->gossip_bind, NULL);
     }
     else
@@ -427,7 +442,17 @@ zyre_node_recv_api (zyre_node_t *self)
         zyre_node_gossip_start (self);
         zstr_free (&self->gossip_connect);
         self->gossip_connect = zmsg_popstr (request);
+
+        if (self->curve_key_secret) {
+            zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
+            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
+        }
+
         zstr_sendx (self->gossip, "CONNECT", self->gossip_connect, NULL);
+
+        if (self->curve_key_public)
+            zstr_sendx (self->gossip, "PUBLISH", "PUBLICKEY", self->curve_key_public, NULL);
+
     }
     else
     if (streq (command, "START"))
@@ -586,7 +611,7 @@ zyre_node_purge_peer (const char *key, void *item, void *argument)
 //  Find or create peer via its UUID
 
 static zyre_peer_t *
-zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
+zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, byte *key)
 {
     assert (self);
     assert (endpoint);
@@ -601,6 +626,14 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
 
         peer = zyre_peer_new (self->peers, uuid);
         assert (peer);
+        if (key) {
+            char encoded [41];
+            zmq_z85_encode(encoded, key, 32);
+            zsys_info (encoded);
+            zyre_peer_set_curve_key(peer, encoded);
+            zyre_peer_set_curve_key_public(peer, self->curve_key_public);
+            zyre_peer_set_curve_key_secret(peer, self->curve_key_secret);
+        }
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
         int rc = zyre_peer_connect (peer, self->uuid, endpoint,
@@ -772,7 +805,8 @@ zyre_node_recv_peer (zyre_node_t *self)
                 return;
             }
         }
-        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg));
+        byte *key = {0};
+        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), key);
         if (peer)
             zyre_peer_set_ready (peer, true);
     }
@@ -887,7 +921,7 @@ zyre_node_recv_beacon (zyre_node_t *self)
         char endpoint [NI_MAXHOST];
         sprintf (endpoint, "tcp://%s:%d", ipaddress, ntohs (beacon.port));
 
-        zyre_node_require_peer (self, uuid, endpoint);
+        zyre_node_require_peer (self, uuid, endpoint, beacon.curve_key);
     }
     else {
         //  Zero port means peer is going away; remove it if
@@ -921,7 +955,9 @@ zyre_node_recv_gossip (zyre_node_t *self)
     if (strneq (endpoint, self->endpoint)) {
         zuuid_t *uuid = zuuid_new ();
         zuuid_set_str (uuid, uuidstr);
-        zyre_node_require_peer (self, uuid, endpoint);
+        byte *key = {0};
+
+        zyre_node_require_peer (self, uuid, endpoint, key);
         zuuid_destroy (&uuid);
     }
     zstr_free (&command);
@@ -1022,6 +1058,12 @@ zyre_node_actor (zsock_t *pipe, void *args)
                     beacon.version = BEACON_VERSION;
                     beacon.port = htons(self->port);
                     zuuid_export(self->uuid, beacon.uuid);
+                    if (self->curve_key_public) {
+                        byte public_key [32] = { 0 };
+                        zmq_z85_decode (public_key, self->curve_key_public);
+                        memcpy(beacon.curve_key, public_key, 32);
+                    }
+
                     zsock_send(self->beacon, "sbi", "PUBLISH",
                         (byte *)&beacon, sizeof(beacon_t), self->interval);
                     zsock_send(self->beacon, "sb", "SUBSCRIBE", (byte *) "ZRE", 3);

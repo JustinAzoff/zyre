@@ -33,6 +33,10 @@ struct _zyre_peer_t {
     uint16_t want_sequence;     //  Incoming message sequence
     zhash_t *headers;           //  Peer headers
     bool verbose;               //  Do we log traffic & failures?
+
+    char *curve_key;
+    char *curve_key_public;
+    char *curve_key_secret;
 };
 
 
@@ -83,9 +87,31 @@ zyre_peer_destroy (zyre_peer_t **self_p)
         zuuid_destroy (&self->uuid);
         free (self->name);
         free (self->origin);
+        free (self->curve_key);
         free (self);
         *self_p = NULL;
     }
+}
+
+void
+zyre_peer_set_curve_key_public (zyre_peer_t *self, const char *key)
+{
+    assert (self);
+    self->curve_key_public = strdup (key);
+}
+
+void
+zyre_peer_set_curve_key_secret (zyre_peer_t *self, const char *key)
+{
+    assert (self);
+    self->curve_key_secret = strdup (key);
+}
+
+void
+zyre_peer_set_curve_key (zyre_peer_t *self, const char *key)
+{
+    assert (self);
+    self->curve_key = strdup (key);
 }
 
 
@@ -139,6 +165,26 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
     } else
         strcat (endpoint_iface, endpoint);
     zrex_destroy (&rex);
+
+    if (self->curve_key) {
+        byte public_key [32] = { 0 };
+        byte secret_key [32] = { 0 };
+
+        zsys_debug ("decoding keys");
+
+        zmq_z85_decode (public_key, self->curve_key_public);
+        zmq_z85_decode (secret_key, self->curve_key_secret);
+
+        zsys_debug ("applying cert");
+        zcert_t *cert = zcert_new_from(public_key, secret_key);
+        zcert_apply(cert, self->mailbox);
+
+        zsys_debug("applying server key");
+        zsock_set_curve_serverkey (self->mailbox, self->curve_key);
+
+        assert (zsock_mechanism (self->mailbox) == ZMQ_CURVE);
+        zsys_debug ("curve appears OK");
+    }
 
     //  Connect through to peer node
     rc = zsock_connect (self->mailbox, "%s", endpoint_iface);
