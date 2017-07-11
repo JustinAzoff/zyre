@@ -277,6 +277,30 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
     return zsock_wait (self->actor) == 0? 0: -1;
 }
 
+void zyre_set_curve_key_public (zyre_t *self, const char *key) {
+    assert (key);
+
+    zstr_sendx (self->actor, "CURVE KEY PUBLIC", key, NULL);
+}
+
+void zyre_set_curve_key_private (zyre_t *self, const char *key) {
+    assert (key);
+
+    zstr_sendx (self->actor, "CURVE KEY PRIVATE", key, NULL);
+}
+
+void zyre_set_gossip_curve_key_public (zyre_t *self, const char *key) {
+    assert (key);
+
+    zstr_sendx (self->actor, "GOSSIP CURVE KEY PUBLIC", key, NULL);
+}
+
+void zyre_set_gossip_curve_key_private (zyre_t *self, const char *key) {
+    assert (key);
+
+    zstr_sendx (self->actor, "GOSSIP CURVE KEY PRIVATE", key, NULL);
+}
+
 
 //  --------------------------------------------------------------------------
 //  Set-up gossip discovery of other nodes. At least one node in the cluster
@@ -592,7 +616,7 @@ zyre_test (bool verbose)
     if (verbose)
         printf ("\n");
 
-    //  @selftest
+    //  @selftestzsys_info ("Using key %s for %s", server_key, endpoint);
     //  We'll use inproc gossip discovery so that this works without networking
 
     uint64_t version = zyre_version ();
@@ -736,6 +760,34 @@ zyre_test (bool verbose)
 
     zyre_destroy (&node1);
     zyre_destroy (&node2);
+
+    // test curve..
+
+    node1 = zyre_new ("node1");
+    node2 = zyre_new ("node2");
+
+    assert (node1);
+    assert (node2);
+
+    assert (streq (zyre_name (node1), "node1"));
+    zyre_set_header (node1, "X-HELLO", "World");
+    if (verbose)
+        zyre_set_verbose (node1);
+
+    zyre_set_curve_key_public(node1, "mE)E/[.5A*(^p#gB@H9vPv./t4.fNS1oxwW.zxyU");
+    zyre_set_curve_key_private(node1, "mE)E/[.5A*(^p#gB@H9vPv./t4.fNS1oxwW.zxyU");
+
+    zyre_set_curve_key_public(node1, "mE)E/[.5A*(^p#gB@H9vPv./t4.fNS1oxwW.zxyU");
+    zyre_set_curve_key_private(node1, "mE)E/[.5A*(^p#gB@H9vPv./t4.fNS1oxwW.zxyU");
+
+    zyre_gossip_bind(node1, "inproc://zgossip");
+
+    zyre_stop (node1);
+    zyre_stop (node2);
+
+    zyre_destroy (&node1);
+    zyre_destroy (&node2);
+
     //  @end
     printf ("OK\n");
 }

@@ -44,6 +44,11 @@ struct _zyre_node_t {
     zactor_t *gossip;           //  Gossip discovery service, if any
     char *gossip_bind;          //  Gossip bind endpoint, if any
     char *gossip_connect;       //  Gossip connect endpoint, if any
+    char *gossip_key_public;    //  Gossip public key, if any
+    char *gossip_key_private;   //  Gossip private key, if any
+
+    char *curve_key_public;
+    char *curve_key_private;
 };
 
 //  Beacon frame has this format:
@@ -136,6 +141,8 @@ zyre_node_destroy (zyre_node_t **self_p)
         zstr_free (&self->endpoint);
         zstr_free (&self->gossip_bind);
         zstr_free (&self->gossip_connect);
+        zstr_free (&self->curve_key_private);
+        zstr_free (&self->curve_key_public);
         free (self->name);
         free (self);
         *self_p = NULL;
@@ -385,6 +392,28 @@ zyre_node_recv_api (zyre_node_t *self)
             zstr_free (&endpoint);
             zsock_signal (self->pipe, 1);
         }
+    }
+    else
+    if (streq (command, "CURVE KEY PUBLIC")) {
+        char *key = zmsg_popstr (request);
+        self->curve_key_public = key;
+        zstr_free (&key);
+    }
+    else
+    if (streq (command, "CURVE KEY PRIVATE")) {
+        char *key = zmsg_popstr (request);
+        self->curve_key_private = key;
+        zstr_free (&key);
+    }
+    else
+    if (streq (command, "GOSSIP CURVE KEY PUBLIC")) {
+        self->gossip_key_public = zmsg_popstr (request);
+        zstr_sendx (self->gossip, "CURVE KEY PUBLIC", NULL);
+    }
+    else
+    if (streq (command, "GOSSIP CURVE KEY PRIVATE")) {
+        self->gossip_key_private = zmsg_popstr (request);
+        zstr_sendx (self->gossip, "CURVE KEY PRIVATE", NULL);
     }
     else
     if (streq (command, "GOSSIP BIND")) {
