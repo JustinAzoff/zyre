@@ -277,6 +277,7 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
     return zsock_wait (self->actor) == 0? 0: -1;
 }
 
+#ifdef ZYRE_BUILD_DRAFT_API
 void zyre_set_curve_key_public (zyre_t *self, const char *key) {
     assert (key);
 
@@ -288,6 +289,7 @@ void zyre_set_curve_key_secret (zyre_t *self, const char *key) {
 
     zstr_sendx (self->actor, "CURVE KEY SECRET", key, NULL);
 }
+#endif
 
 
 //  --------------------------------------------------------------------------

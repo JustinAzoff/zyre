@@ -44,9 +44,12 @@ struct _zyre_node_t {
     zactor_t *gossip;           //  Gossip discovery service, if any
     char *gossip_bind;          //  Gossip bind endpoint, if any
     char *gossip_connect;       //  Gossip connect endpoint, if any
+    char *log_prefix;           //  Default log prefix
 
+#ifdef ZYRE_BUILD_DRAFT_API
     char *curve_key_public;
     char *curve_key_secret;
+#endif
 };
 
 //  Beacon frame has this format:
@@ -66,7 +69,6 @@ typedef struct {
     uint16_t port;
 
 #ifdef ZYRE_BUILD_DRAFT_API
-//    byte curve_key [32];
     char *curve_key;
 #endif
 } beacon_t;
@@ -145,8 +147,10 @@ zyre_node_destroy (zyre_node_t **self_p)
         zstr_free (&self->endpoint);
         zstr_free (&self->gossip_bind);
         zstr_free (&self->gossip_connect);
+#ifdef ZYRE_BUILD_DRAFT_API
         zstr_free (&self->curve_key_secret);
         zstr_free (&self->curve_key_public);
+#endif
         free (self->name);
         free (self);
         *self_p = NULL;
@@ -173,6 +177,7 @@ zyre_node_gossip_start (zyre_node_t *self)
 static int
 zyre_node_start (zyre_node_t *self)
 {
+#ifdef ZYRE_BUILD_DRAFT_API
     if (self->curve_key_secret) {
         zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
         zcert_apply(cert, self->inbox);
@@ -180,6 +185,7 @@ zyre_node_start (zyre_node_t *self)
         zsys_info ("setting curve server");
         zsock_set_curve_server (self->inbox, 1);
     }
+#endif
     if (self->beacon_port) {
         //  Start beacon discovery
         //  ------------------------------------------------------------------
@@ -208,15 +214,28 @@ zyre_node_start (zyre_node_t *self)
             zstr_free (&hostname);
         }
         assert (self->gossip);
+
+#ifdef ZYRE_BUILD_DRAFT_API
+        if (self->curve_key_public) {
+            char *published_endpoint = zsys_sprintf("%s|%s", self->endpoint, self->curve_key_public);
+            zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), published_endpoint, NULL);
+            zstr_free(&published_endpoint);
+        } else {
+            zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), self->endpoint, NULL);
+        }
+#else
         zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), self->endpoint, NULL);
+#endif
         //  Start polling on zgossip
         zpoller_add (self->poller, self->gossip);
         //  Start polling on inbox
         zpoller_add(self->poller, self->inbox);
     }
 
+#ifdef ZYRE_BUILD_DRAFT_API
     if (self->curve_key_secret)
         assert (zsock_mechanism (self->inbox) == ZMQ_CURVE);
+#endif
 
     return 0;
 }
@@ -348,6 +367,10 @@ zyre_node_recv_api (zyre_node_t *self)
         return;                 //  Interrupted
 
     char *command = zmsg_popstr (request);
+
+    if (self->verbose)
+        zsys_debug ("%s:     API command=%s", self->log_prefix, command);
+
     if (streq (command, "UUID"))
         zstr_send (self->pipe, zuuid_str (self->uuid));
     else
@@ -410,6 +433,7 @@ zyre_node_recv_api (zyre_node_t *self)
             zsock_signal (self->pipe, 1);
         }
     }
+#ifdef ZYRE_BUILD_DRAFT_API
     else
     if (streq (command, "CURVE KEY PUBLIC")) {
         self->curve_key_public = zmsg_popstr (request);
@@ -420,19 +444,22 @@ zyre_node_recv_api (zyre_node_t *self)
     if (streq (command, "CURVE KEY SECRET")) {
         self->curve_key_secret = zmsg_popstr (request);
         assert (self->curve_key_secret);
-        zsys_debug ("setting public key: %s", self->curve_key_secret);
+        zsys_debug ("setting secret key: %s", self->curve_key_secret);
     }
+#endif
     else
     if (streq (command, "GOSSIP BIND")) {
         zyre_node_gossip_start (self);
         zstr_free (&self->gossip_bind);
         self->gossip_bind = zmsg_popstr (request);
-
+#ifdef ZYRE_BUILD_DRAFT_API
         if (self->curve_key_secret) {
+            zsys_info ("Setting gossip keys: %s", self->curve_key_public);
+
             zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
             zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
         }
-
+#endif
         zstr_sendx (self->gossip, "BIND", self->gossip_bind, NULL);
     }
     else
@@ -440,17 +467,13 @@ zyre_node_recv_api (zyre_node_t *self)
         zyre_node_gossip_start (self);
         zstr_free (&self->gossip_connect);
         self->gossip_connect = zmsg_popstr (request);
-
+#ifdef ZYRE_BUILD_DRAFT_API
         if (self->curve_key_secret) {
             zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
             zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
         }
-
+#endif
         zstr_sendx (self->gossip, "CONNECT", self->gossip_connect, NULL);
-
-        if (self->curve_key_public)
-            zstr_sendx (self->gossip, "PUBLISH", "PUBLICKEY", self->curve_key_public, NULL);
-
     }
     else
     if (streq (command, "START"))
@@ -609,13 +632,24 @@ zyre_node_purge_peer (const char *key, void *item, void *argument)
 //  Find or create peer via its UUID
 
 static zyre_peer_t *
-zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, char *key)
+zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
 {
     assert (self);
     assert (endpoint);
 
     zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
     if (!peer) {
+#ifdef ZYRE_BUILD_DRAFT_API
+        // check endpoint for | and curve key
+        char *pipe = strchr(endpoint, '|');
+        char *public_key  = NULL;
+        if(pipe != NULL) {
+            *pipe = '\0';
+            public_key = pipe+1;
+            assert (sizeof(&public_key) == 8);
+        }
+#endif
+
         //  Purge any previous peer on same endpoint
         void *item;
         for (item = zhash_first (self->peers); item != NULL;
@@ -624,11 +658,14 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint, 
 
         peer = zyre_peer_new (self->peers, uuid);
         assert (peer);
-        if (key) {
-            zyre_peer_set_curve_key(peer, key);
+
+#ifdef ZYRE_BUILD_DRAFT_API
+        if (public_key) {
+            zyre_peer_set_curve_key(peer, public_key);
             zyre_peer_set_curve_key_public(peer, self->curve_key_public);
             zyre_peer_set_curve_key_secret(peer, self->curve_key_secret);
         }
+#endif
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
         int rc = zyre_peer_connect (peer, self->uuid, endpoint,
@@ -800,8 +837,7 @@ zyre_node_recv_peer (zyre_node_t *self)
                 return;
             }
         }
-        char *key = NULL;
-        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), key);
+        peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg));
         if (peer)
             zyre_peer_set_ready (peer, true);
     }
@@ -916,7 +952,12 @@ zyre_node_recv_beacon (zyre_node_t *self)
         char endpoint [NI_MAXHOST];
         sprintf (endpoint, "tcp://%s:%d", ipaddress, ntohs (beacon.port));
 
-        zyre_node_require_peer (self, uuid, endpoint, beacon.curve_key);
+#ifdef ZYRE_BUILD_DRAFT_API
+        if (beacon.curve_key)
+            sprintf (endpoint, "%s|%s", endpoint, beacon.curve_key);
+#endif
+
+        zyre_node_require_peer (self, uuid, endpoint);
     }
     else {
         //  Zero port means peer is going away; remove it if
@@ -952,9 +993,8 @@ zyre_node_recv_gossip (zyre_node_t *self)
     if (strneq (endpoint, self->endpoint)) {
         zuuid_t *uuid = zuuid_new ();
         zuuid_set_str (uuid, uuidstr);
-        char *key = NULL;
 
-        zyre_node_require_peer (self, uuid, endpoint, key);
+        zyre_node_require_peer (self, uuid, endpoint);
         zuuid_destroy (&uuid);
     }
     zstr_free (&command);
@@ -1013,6 +1053,9 @@ zyre_node_actor (zsock_t *pipe, void *args)
     zyre_node_t *self = zyre_node_new (pipe, args);
     if (!self)                  //  Interrupted
         return;
+
+    //  Actor argument may be a string used for logging
+    self->log_prefix = args? (char *) args: "";
 
     //  Signal actor successfully initialized
     zsock_signal (self->pipe, 0);

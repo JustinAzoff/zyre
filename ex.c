@@ -41,10 +41,39 @@ int main (void)
     zyre_set_curve_key_public(node2, zcert_public_txt (node2_cert));
     zyre_set_curve_key_secret(node2, zcert_secret_txt (node2_cert));
 
-    zyre_start(node1);
-    zyre_start(node2);
+    const char *gossip_cert;
+    gossip_cert = zcert_public_txt (node1_cert);
 
-    zclock_sleep(2000);
+    zyre_gossip_bind(node1, "tcp://*:9001");
+    zyre_gossip_connect(node2, "tcp://127.0.0.1:9001|%s", gossip_cert);
+
+    zyre_start(node1);
+    zsock_wait(node1);
+    zyre_start(node2);
+    zsock_wait(node2);
+
+    zyre_join (node1, "GLOBAL");
+    zyre_join (node2, "GLOBAL");
+
+    // Give them time to join their groups
+
+    zclock_sleep (250);
+    zyre_dump (node1);
+
+    zyre_shouts (node1, "GLOBAL", "Hello, World");
+
+    //  Second node should receive ENTER, JOIN, and SHOUT
+    zmsg_t *msg = zyre_recv (node2);
+    assert (msg);
+    char *command = zmsg_popstr (msg);
+    assert (streq (command, "ENTER"));
+    zstr_free (&command);
+    assert (zmsg_size (msg) == 4);
+    char *peerid = zmsg_popstr (msg);
+    char *name = zmsg_popstr (msg);
+    assert (streq (name, "node1"));
+    zstr_free (&name);
+    zframe_t *headers_packed = zmsg_pop (msg);
 
     zyre_stop (node1);
     zyre_stop (node2);
