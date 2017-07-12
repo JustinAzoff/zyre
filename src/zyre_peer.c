@@ -34,9 +34,11 @@ struct _zyre_peer_t {
     zhash_t *headers;           //  Peer headers
     bool verbose;               //  Do we log traffic & failures?
 
+#ifdef ZYRE_BUILD_DRAFT_API
     char *curve_key;
     char *curve_key_public;
     char *curve_key_secret;
+#endif
 };
 
 
@@ -87,12 +89,17 @@ zyre_peer_destroy (zyre_peer_t **self_p)
         zuuid_destroy (&self->uuid);
         free (self->name);
         free (self->origin);
+#ifdef ZYRE_BUILD_DRAFT_API
         free (self->curve_key);
+        free (self->curve_key_public);
+        free (self->curve_key_secret);
+#endif
         free (self);
         *self_p = NULL;
     }
 }
 
+#ifdef ZYRE_BUILD_DRAFT_API
 void
 zyre_peer_set_curve_key_public (zyre_peer_t *self, const char *key)
 {
@@ -113,7 +120,7 @@ zyre_peer_set_curve_key (zyre_peer_t *self, const char *key)
     assert (self);
     self->curve_key = strdup (key);
 }
-
+#endif
 
 //  --------------------------------------------------------------------------
 //  Connect peer mailbox
@@ -166,6 +173,7 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
         strcat (endpoint_iface, endpoint);
     zrex_destroy (&rex);
 
+#ifdef ZYRE_BUILD_DRAFT_API
     if (self->curve_key) {
         zsys_debug ("applying cert");
         zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
@@ -177,6 +185,7 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
         assert (zsock_mechanism (self->mailbox) == ZMQ_CURVE);
         zsys_debug ("curve appears OK");
     }
+#endif
 
     //  Connect through to peer node
     rc = zsock_connect (self->mailbox, "%s", endpoint_iface);
