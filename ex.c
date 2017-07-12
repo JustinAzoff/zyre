@@ -45,6 +45,7 @@ int main (void)
     zyre_start(node2);
 
     zclock_sleep(2000);
+
     zyre_stop (node1);
     zyre_stop (node2);
 

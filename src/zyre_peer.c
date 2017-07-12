@@ -167,16 +167,8 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
     zrex_destroy (&rex);
 
     if (self->curve_key) {
-        byte public_key [32] = { 0 };
-        byte secret_key [32] = { 0 };
-
-        zsys_debug ("decoding keys");
-
-        zmq_z85_decode (public_key, self->curve_key_public);
-        zmq_z85_decode (secret_key, self->curve_key_secret);
-
         zsys_debug ("applying cert");
-        zcert_t *cert = zcert_new_from(public_key, secret_key);
+        zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
         zcert_apply(cert, self->mailbox);
 
         zsys_debug("applying server key");
