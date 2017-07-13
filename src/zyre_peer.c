@@ -175,15 +175,12 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
 
 #ifdef ZYRE_BUILD_DRAFT_API
     if (self->curve_key) {
-        zsys_debug ("applying cert");
         zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
         zcert_apply(cert, self->mailbox);
 
-        zsys_debug("applying server key");
         zsock_set_curve_serverkey (self->mailbox, self->curve_key);
 
         assert (zsock_mechanism (self->mailbox) == ZMQ_CURVE);
-        zsys_debug ("curve appears OK");
     }
 #endif
 

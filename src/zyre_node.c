@@ -433,10 +433,11 @@ zyre_node_recv_api (zyre_node_t *self)
             zsock_signal (self->pipe, 1);
         }
     }
-#ifdef ZYRE_BUILD_DRAFT_API
     else
+#ifdef ZYRE_BUILD_DRAFT_API
     if (streq (command, "CURVE KEY PUBLIC")) {
         self->curve_key_public = zmsg_popstr (request);
+        zsys_debug("self->curve_key_public");
         assert (self->curve_key_public);
         zsys_debug ("setting public key: %s", self->curve_key_public);
     }
@@ -446,8 +447,8 @@ zyre_node_recv_api (zyre_node_t *self)
         assert (self->curve_key_secret);
         zsys_debug ("setting secret key: %s", self->curve_key_secret);
     }
-#endif
     else
+#endif
     if (streq (command, "GOSSIP BIND")) {
         zyre_node_gossip_start (self);
         zstr_free (&self->gossip_bind);
@@ -640,14 +641,8 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
     zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
     if (!peer) {
 #ifdef ZYRE_BUILD_DRAFT_API
-        // check endpoint for | and curve key
-        char *pipe = strchr(endpoint, '|');
-        char *public_key  = NULL;
-        if(pipe != NULL) {
-            *pipe = '\0';
-            public_key = pipe+1;
-            assert (sizeof(&public_key) == 8);
-        }
+        const char *public_key = NULL;
+        public_key = zsys_public_key_from_endpoint(endpoint);
 #endif
 
         //  Purge any previous peer on same endpoint
