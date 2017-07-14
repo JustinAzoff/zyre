@@ -278,7 +278,7 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
 }
 //
 //  --------------------------------------------------------------------------
-//  Find or create peer via its UUID
+//  Connect to a new peer given its UUID and endpoint
 
 int
 zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)

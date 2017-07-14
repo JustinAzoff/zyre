@@ -215,6 +215,13 @@
         <return type = "string" fresh = "1" />
     </method>
 
+    <method name = "require peer">
+        Connect to a new peer given its UUID and endpoint
+        <argument name = "uuid" type = "string" />
+        <argument name = "endpoint" type = "string" />
+        <return type = "integer" />
+	</method>
+
     <method name = "socket">
         Return socket for talking to the Zyre node, for polling
         <return type = "zsock" />
