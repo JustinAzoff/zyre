@@ -276,7 +276,16 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
     free (string);
     return zsock_wait (self->actor) == 0? 0: -1;
 }
+//
+//  --------------------------------------------------------------------------
+//  Connect to a new peer given its UUID and endpoint
 
+int
+zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)
+{
+    assert (self);
+    return zstr_sendx (self->actor, "REQUIRE PEER", uuid, endpoint, NULL);
+}
 
 //  --------------------------------------------------------------------------
 //  Set-up gossip discovery of other nodes. At least one node in the cluster

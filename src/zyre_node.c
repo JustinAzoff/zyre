@@ -314,6 +314,75 @@ zyre_node_dump (zyre_node_t *self)
 
 }
 
+static int
+zyre_node_purge_peer (const char *key, void *item, void *argument)
+{
+    zyre_peer_t *peer = (zyre_peer_t *) item;
+    char *endpoint = (char *) argument;
+    if (streq (zyre_peer_endpoint (peer), endpoint))
+        zyre_peer_disconnect (peer);
+    return 0;
+}
+
+//  Find or create peer via its UUID
+
+static zyre_peer_t *
+zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
+{
+    assert (self);
+    assert (endpoint);
+
+    zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
+    if (!peer) {
+        //  Purge any previous peer on same endpoint
+        void *item;
+        for (item = zhash_first (self->peers); item != NULL;
+                item = zhash_next (self->peers))
+            zyre_node_purge_peer (zhash_cursor (self->peers), item, (char *) endpoint);
+
+        peer = zyre_peer_new (self->peers, uuid);
+        assert (peer);
+        zyre_peer_set_origin (peer, self->name);
+        zyre_peer_set_verbose (peer, self->verbose);
+        int rc = zyre_peer_connect (peer, self->uuid, endpoint,
+                self->expired_timeout);
+        if (rc != 0) {
+            // TBD: removing the peer means it will keep retrying. Should
+            // it be kept in the hash table instead perhaps?
+            zhash_delete (self->peers, zyre_peer_identity (peer));
+            return NULL;
+        }
+
+        //  Handshake discovery by sending HELLO as first message
+        zlist_t *groups = zlist_dup (self->own_groups);
+        zhash_t *headers = zhash_dup (self->headers);
+        zre_msg_t *msg = zre_msg_new ();
+        zre_msg_set_id (msg, ZRE_MSG_HELLO);
+
+        //  If the endpoint is a link-local IPv6 address we must not send the
+        //  interface name to the peer, as it is relevant only on the local node
+        char endpoint_iface [NI_MAXHOST] = {0};
+        if (zsys_ipv6 () && strchr (self->endpoint, '%')) {
+            strcat (endpoint_iface, self->endpoint);
+            memmove (strchr (endpoint_iface, '%'),
+                    strrchr (endpoint_iface, ':'),
+                    strlen (strrchr (endpoint_iface, ':')) + 1);
+            zre_msg_set_endpoint (msg, endpoint_iface);
+        } else
+            zre_msg_set_endpoint (msg, self->endpoint);
+
+        zre_msg_set_groups (msg, &groups);
+        zre_msg_set_status (msg, self->status);
+        zre_msg_set_name (msg, self->name);
+        zre_msg_set_headers (msg, &headers);
+        zyre_peer_send (peer, &msg);
+        zre_msg_destroy (&msg);
+        
+        zyre_peer_refresh (peer, self->evasive_timeout, self->expired_timeout);
+    }
+    return peer;
+}
+
 
 //  Here we handle the different control messages from the front-end
 
@@ -481,6 +550,19 @@ zyre_node_recv_api (zyre_node_t *self)
         zstr_free (&name);
     }
     else
+    if (streq (command, "REQUIRE PEER")) {
+        char *uuidstr = zmsg_popstr (request);
+        char *endpoint = zmsg_popstr (request);
+        if (strneq (endpoint, self->endpoint)) {
+            zuuid_t *uuid = zuuid_new ();
+            zuuid_set_str (uuid, uuidstr);
+            zyre_node_require_peer (self, uuid, endpoint);
+            zuuid_destroy (&uuid);
+        }
+        zstr_free (&uuidstr);
+        zstr_free (&endpoint);
+    }
+    else
     if (streq (command, "PEERS"))
         zsock_send (self->pipe, "p", zhash_keys (self->peers));
     else
@@ -543,75 +625,6 @@ zyre_node_recv_api (zyre_node_t *self)
 }
 
 //  Delete peer for a given endpoint
-
-static int
-zyre_node_purge_peer (const char *key, void *item, void *argument)
-{
-    zyre_peer_t *peer = (zyre_peer_t *) item;
-    char *endpoint = (char *) argument;
-    if (streq (zyre_peer_endpoint (peer), endpoint))
-        zyre_peer_disconnect (peer);
-    return 0;
-}
-
-//  Find or create peer via its UUID
-
-static zyre_peer_t *
-zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
-{
-    assert (self);
-    assert (endpoint);
-
-    zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
-    if (!peer) {
-        //  Purge any previous peer on same endpoint
-        void *item;
-        for (item = zhash_first (self->peers); item != NULL;
-                item = zhash_next (self->peers))
-            zyre_node_purge_peer (zhash_cursor (self->peers), item, (char *) endpoint);
-
-        peer = zyre_peer_new (self->peers, uuid);
-        assert (peer);
-        zyre_peer_set_origin (peer, self->name);
-        zyre_peer_set_verbose (peer, self->verbose);
-        int rc = zyre_peer_connect (peer, self->uuid, endpoint,
-                self->expired_timeout);
-        if (rc != 0) {
-            // TBD: removing the peer means it will keep retrying. Should
-            // it be kept in the hash table instead perhaps?
-            zhash_delete (self->peers, zyre_peer_identity (peer));
-            return NULL;
-        }
-
-        //  Handshake discovery by sending HELLO as first message
-        zlist_t *groups = zlist_dup (self->own_groups);
-        zhash_t *headers = zhash_dup (self->headers);
-        zre_msg_t *msg = zre_msg_new ();
-        zre_msg_set_id (msg, ZRE_MSG_HELLO);
-
-        //  If the endpoint is a link-local IPv6 address we must not send the
-        //  interface name to the peer, as it is relevant only on the local node
-        char endpoint_iface [NI_MAXHOST] = {0};
-        if (zsys_ipv6 () && strchr (self->endpoint, '%')) {
-            strcat (endpoint_iface, self->endpoint);
-            memmove (strchr (endpoint_iface, '%'),
-                    strrchr (endpoint_iface, ':'),
-                    strlen (strrchr (endpoint_iface, ':')) + 1);
-            zre_msg_set_endpoint (msg, endpoint_iface);
-        } else
-            zre_msg_set_endpoint (msg, self->endpoint);
-
-        zre_msg_set_groups (msg, &groups);
-        zre_msg_set_status (msg, self->status);
-        zre_msg_set_name (msg, self->name);
-        zre_msg_set_headers (msg, &headers);
-        zyre_peer_send (peer, &msg);
-        zre_msg_destroy (&msg);
-        
-        zyre_peer_refresh (peer, self->evasive_timeout, self->expired_timeout);
-    }
-    return peer;
-}
 
 
 //  Remove peer from group, if it's a member
