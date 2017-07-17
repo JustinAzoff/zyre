@@ -280,12 +280,25 @@ zyre_set_endpoint (zyre_t *self, const char *format, ...)
 //  --------------------------------------------------------------------------
 //  Connect to a new peer given its UUID and endpoint
 
+#ifdef ZYRE_BUILD_DRAFT_API
 int
 zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)
 {
     assert (self);
     return zstr_sendx (self->actor, "REQUIRE PEER", uuid, endpoint, NULL);
 }
+void zyre_set_curve_key_public (zyre_t *self, const char *key) {
+    assert (key);
+    zstr_sendx (self->actor, "CURVE KEY PUBLIC", key, NULL);
+}
+
+void zyre_set_curve_key_secret (zyre_t *self, const char *key) {
+    assert (key);
+
+    zstr_sendx (self->actor, "CURVE KEY SECRET", key, NULL);
+}
+#endif
+
 
 //  --------------------------------------------------------------------------
 //  Set-up gossip discovery of other nodes. At least one node in the cluster
@@ -601,7 +614,7 @@ zyre_test (bool verbose)
     if (verbose)
         printf ("\n");
 
-    //  @selftest
+    //  @selftestzsys_info ("Using key %s for %s", server_key, endpoint);
     //  We'll use inproc gossip discovery so that this works without networking
 
     uint64_t version = zyre_version ();
@@ -745,6 +758,89 @@ zyre_test (bool verbose)
 
     zyre_destroy (&node1);
     zyre_destroy (&node2);
+
+#ifdef ZYRE_BUILD_DRAFT_API
+    if (zsys_has_curve()){
+
+        zactor_t *auth = zactor_new(zauth, NULL);
+        assert (auth);
+        zstr_sendx (auth, "VERBOSE", NULL);
+        zsock_wait (auth);
+        zstr_sendx (auth, "CURVE", CURVE_ALLOW_ANY, NULL);
+        zsock_wait (auth);
+
+        zyre_t *node3 = zyre_new ("node3");
+        zyre_t *node4 = zyre_new ("node4");
+
+        assert (node3);
+        assert (node4);
+
+        assert (streq (zyre_name (node3), "node3"));
+        zyre_set_header (node3, "X-HELLO", "World");
+
+        zyre_set_verbose (node3);
+        zyre_set_verbose (node4);
+
+        zcert_t *node3_cert = zcert_new ();
+        zcert_t *node4_cert = zcert_new ();
+
+        assert (node3_cert);
+        assert (node4_cert);
+
+        zyre_set_curve_key_public(node3, zcert_public_txt (node3_cert));
+        zyre_set_curve_key_secret(node3, zcert_secret_txt (node3_cert));
+
+        zyre_set_curve_key_public(node4, zcert_public_txt (node4_cert));
+        zyre_set_curve_key_secret(node4, zcert_secret_txt (node4_cert));
+
+        const char *gossip_cert;
+        gossip_cert = zcert_public_txt (node3_cert);
+
+        zyre_gossip_bind(node3, "tcp://*:9001");
+        zyre_gossip_connect(node4, "tcp://127.0.0.1:9001|%s", gossip_cert);
+
+        zyre_start(node3);
+        zsock_wait(node3);
+        zyre_start(node4);
+        zsock_wait(node4);
+
+        zyre_join (node3, "GLOBAL");
+        zyre_join (node4, "GLOBAL");
+
+//        zclock_sleep (1500);
+        zyre_dump (node3);
+
+        zyre_shouts (node3, "GLOBAL", "Hello, World");
+
+//        zclock_sleep (250);
+
+        //  Second node should receive ENTER, JOIN, and SHOUT
+        msg = zyre_recv (node4);
+        assert (msg);
+        command = zmsg_popstr (msg);
+        zsys_info(command);
+        assert (streq (command, "ENTER"));
+        zstr_free (&command);
+        assert (zmsg_size (msg) == 4);
+        char *peerid = zmsg_popstr (msg);
+        assert (peerid);
+        name = zmsg_popstr (msg);
+        zsys_info(name);
+
+        assert (streq (name, "node3"));
+        zstr_free (&name);
+
+        zyre_stop (node3);
+        zyre_stop (node4);
+
+        zyre_destroy(&node3);
+        zyre_destroy(&node4);
+        zactor_destroy(&auth);
+
+    }
+#endif
+
+
     //  @end
     printf ("OK\n");
 }

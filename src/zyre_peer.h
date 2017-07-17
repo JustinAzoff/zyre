@@ -28,6 +28,16 @@ zyre_peer_t *
 void
     zyre_peer_destroy (zyre_peer_t **self_p);
 
+// curve
+void
+    zyre_peer_set_curve_key (zyre_peer_t *self, const char *key);
+
+void
+    zyre_peer_set_curve_key_public (zyre_peer_t *self, const char *key);
+
+void
+    zyre_peer_set_curve_key_secret (zyre_peer_t *self, const char *key);
+
 //  Connect peer mailbox
 int
     zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint64_t expired_timeout);

@@ -105,8 +105,16 @@ ZYRE_EXPORT void
 ZYRE_EXPORT int
     zyre_set_endpoint (zyre_t *self, const char *format, ...) CHECK_PRINTF (2);
 
+#ifdef ZYRE_BUILD_DRAFT_API
 ZYRE_EXPORT int
     zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint);
+
+ZYRE_EXPORT void
+    zyre_set_curve_key_public (zyre_t *self, const char *key);
+
+ZYRE_EXPORT void
+    zyre_set_curve_key_secret (zyre_t *self, const char *key);
+#endif
 
 //  Set-up gossip discovery of other nodes. At least one node in the cluster
 //  must bind to a well-known gossip endpoint, so other nodes can connect to
