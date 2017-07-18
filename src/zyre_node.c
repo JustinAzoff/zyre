@@ -44,7 +44,6 @@ struct _zyre_node_t {
     zactor_t *gossip;           //  Gossip discovery service, if any
     char *gossip_bind;          //  Gossip bind endpoint, if any
     char *gossip_connect;       //  Gossip connect endpoint, if any
-    char *log_prefix;           //  Default log prefix
 
 #ifdef ZYRE_BUILD_DRAFT_API
     char *curve_key_public;
@@ -438,7 +437,7 @@ zyre_node_recv_api (zyre_node_t *self)
     char *command = zmsg_popstr (request);
 
     if (self->verbose)
-        zsys_debug ("%s:     API command=%s", self->log_prefix, command);
+        zsys_debug ("%s:     API command=%s", self->name, command);
 
     if (streq (command, "UUID"))
         zstr_send (self->pipe, zuuid_str (self->uuid));
@@ -1047,9 +1046,6 @@ zyre_node_actor (zsock_t *pipe, void *args)
     zyre_node_t *self = zyre_node_new (pipe, args);
     if (!self)                  //  Interrupted
         return;
-
-    //  Actor argument may be a string used for logging
-    self->log_prefix = args? (char *) args: "";
 
     //  Signal actor successfully initialized
     zsock_signal (self->pipe, 0);
