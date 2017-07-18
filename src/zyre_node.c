@@ -372,6 +372,9 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
     assert (self);
     assert (endpoint);
 
+    if streq (zuuid_str (uuid), zuuid_str (self->uuid))
+        return NULL;
+
     zyre_peer_t *peer = (zyre_peer_t *) zhash_lookup (self->peers, zuuid_str (uuid));
     if (!peer) {
         //  Purge any previous peer on same endpoint
