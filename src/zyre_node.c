@@ -405,7 +405,13 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
                     strlen (strrchr (endpoint_iface, ':')) + 1);
             zre_msg_set_endpoint (msg, endpoint_iface);
         } else
-            zre_msg_set_endpoint (msg, self->endpoint);
+            if(self->curve_key) {
+                char *published_endpoint = zsys_sprintf("%s|%s", self->endpoint, zcert_public_txt(self->curve_key));
+                zre_msg_set_endpoint (msg, published_endpoint);
+                zstr_free(&published_endpoint);
+            } else {
+                zre_msg_set_endpoint (msg, self->endpoint);
+            }
 
         zre_msg_set_groups (msg, &groups);
         zre_msg_set_status (msg, self->status);
