@@ -110,10 +110,7 @@ ZYRE_EXPORT int
     zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint);
 
 ZYRE_EXPORT void
-    zyre_set_curve_key_public (zyre_t *self, const char *key);
-
-ZYRE_EXPORT void
-    zyre_set_curve_key_secret (zyre_t *self, const char *key);
+    zyre_set_curve_keypair (zyre_t *self, const char *public_key, const char *private_key);
 #endif
 
 //  Set-up gossip discovery of other nodes. At least one node in the cluster

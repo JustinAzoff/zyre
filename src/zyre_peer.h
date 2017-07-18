@@ -30,13 +30,10 @@ void
 
 // curve
 void
-    zyre_peer_set_curve_key (zyre_peer_t *self, const char *key);
+    zyre_peer_set_curve_serverkey (zyre_peer_t *self, const char *key);
 
 void
-    zyre_peer_set_curve_key_public (zyre_peer_t *self, const char *key);
-
-void
-    zyre_peer_set_curve_key_secret (zyre_peer_t *self, const char *key);
+    zyre_peer_set_curve_keypair (zyre_peer_t *self, zcert_t *cert);
 
 //  Connect peer mailbox
 int

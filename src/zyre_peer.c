@@ -35,9 +35,8 @@ struct _zyre_peer_t {
     bool verbose;               //  Do we log traffic & failures?
 
 #ifdef ZYRE_BUILD_DRAFT_API
-    char *curve_key;
-    char *curve_key_public;
-    char *curve_key_secret;
+    char *curve_serverkey;
+    zcert_t * curve_key;
 #endif
 };
 
@@ -90,9 +89,7 @@ zyre_peer_destroy (zyre_peer_t **self_p)
         free (self->name);
         free (self->origin);
 #ifdef ZYRE_BUILD_DRAFT_API
-        free (self->curve_key);
-        free (self->curve_key_public);
-        free (self->curve_key_secret);
+        free (self->curve_serverkey);
 #endif
         free (self);
         *self_p = NULL;
@@ -101,25 +98,19 @@ zyre_peer_destroy (zyre_peer_t **self_p)
 
 #ifdef ZYRE_BUILD_DRAFT_API
 void
-zyre_peer_set_curve_key_public (zyre_peer_t *self, const char *key)
+zyre_peer_set_curve_keypair (zyre_peer_t *self, zcert_t *key)
 {
     assert (self);
-    self->curve_key_public = strdup (key);
+    self->curve_key = key;
 }
 
 void
-zyre_peer_set_curve_key_secret (zyre_peer_t *self, const char *key)
+zyre_peer_set_curve_serverkey (zyre_peer_t *self, const char *key)
 {
     assert (self);
-    self->curve_key_secret = strdup (key);
+    self->curve_serverkey = strdup (key);
 }
 
-void
-zyre_peer_set_curve_key (zyre_peer_t *self, const char *key)
-{
-    assert (self);
-    self->curve_key = strdup (key);
-}
 #endif
 
 //  --------------------------------------------------------------------------
@@ -175,10 +166,13 @@ zyre_peer_connect (zyre_peer_t *self, zuuid_t *from, const char *endpoint, uint6
 
 #ifdef ZYRE_BUILD_DRAFT_API
     if (self->curve_key) {
-        zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
-        zcert_apply(cert, self->mailbox);
+        zcert_apply(self->curve_key, self->mailbox);
 
-        zsock_set_curve_serverkey (self->mailbox, self->curve_key);
+        zsys_debug ("Connecting with cert:");
+        zcert_print(self->curve_key);
+        zsys_debug ("Setting server cert to %s", self->curve_serverkey);
+
+        zsock_set_curve_serverkey (self->mailbox, self->curve_serverkey);
 
         assert (zsock_mechanism (self->mailbox) == ZMQ_CURVE);
     }

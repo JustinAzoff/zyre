@@ -287,15 +287,11 @@ zyre_require_peer (zyre_t *self, const char *uuid, const char *endpoint)
     assert (self);
     return zstr_sendx (self->actor, "REQUIRE PEER", uuid, endpoint, NULL);
 }
-void zyre_set_curve_key_public (zyre_t *self, const char *key) {
-    assert (key);
-    zstr_sendx (self->actor, "CURVE KEY PUBLIC", key, NULL);
-}
-
-void zyre_set_curve_key_secret (zyre_t *self, const char *key) {
-    assert (key);
-
-    zstr_sendx (self->actor, "CURVE KEY SECRET", key, NULL);
+void
+zyre_set_curve_keypair (zyre_t *self, const char *public_key, const char *secret_key) {
+    assert (public_key);
+    assert (secret_key);
+    zstr_sendx (self->actor, "CURVE KEY PAIR", public_key, secret_key, NULL);
 }
 #endif
 
@@ -787,11 +783,8 @@ zyre_test (bool verbose)
         assert (node3_cert);
         assert (node4_cert);
 
-        zyre_set_curve_key_public(node3, zcert_public_txt (node3_cert));
-        zyre_set_curve_key_secret(node3, zcert_secret_txt (node3_cert));
-
-        zyre_set_curve_key_public(node4, zcert_public_txt (node4_cert));
-        zyre_set_curve_key_secret(node4, zcert_secret_txt (node4_cert));
+        zyre_set_curve_keypair(node3, zcert_public_txt (node3_cert), zcert_secret_txt (node3_cert));
+        zyre_set_curve_keypair(node4, zcert_public_txt (node4_cert), zcert_secret_txt (node4_cert));
 
         const char *gossip_cert;
         gossip_cert = zcert_public_txt (node3_cert);

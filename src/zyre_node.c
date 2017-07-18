@@ -46,8 +46,7 @@ struct _zyre_node_t {
     char *gossip_connect;       //  Gossip connect endpoint, if any
 
 #ifdef ZYRE_BUILD_DRAFT_API
-    char *curve_key_public;
-    char *curve_key_secret;
+    zcert_t *curve_key;
 #endif
 };
 
@@ -147,8 +146,7 @@ zyre_node_destroy (zyre_node_t **self_p)
         zstr_free (&self->gossip_bind);
         zstr_free (&self->gossip_connect);
 #ifdef ZYRE_BUILD_DRAFT_API
-        zstr_free (&self->curve_key_secret);
-        zstr_free (&self->curve_key_public);
+        zcert_destroy (&self->curve_key);
 #endif
         free (self->name);
         free (self);
@@ -176,15 +174,6 @@ zyre_node_gossip_start (zyre_node_t *self)
 static int
 zyre_node_start (zyre_node_t *self)
 {
-#ifdef ZYRE_BUILD_DRAFT_API
-    if (self->curve_key_secret) {
-        zcert_t *cert = zcert_new_from_txt(self->curve_key_public, self->curve_key_secret);
-        zcert_apply(cert, self->inbox);
-
-        zsys_info ("setting curve server");
-        zsock_set_curve_server (self->inbox, 1);
-    }
-#endif
     if (self->beacon_port) {
         //  Start beacon discovery
         //  ------------------------------------------------------------------
@@ -215,8 +204,8 @@ zyre_node_start (zyre_node_t *self)
         assert (self->gossip);
 
 #ifdef ZYRE_BUILD_DRAFT_API
-        if (self->curve_key_public) {
-            char *published_endpoint = zsys_sprintf("%s|%s", self->endpoint, self->curve_key_public);
+        if (self->curve_key) {
+            char *published_endpoint = zsys_sprintf("%s|%s", self->endpoint, zcert_public_txt(self->curve_key));
             zstr_sendx (self->gossip, "PUBLISH", zuuid_str (self->uuid), published_endpoint, NULL);
             zstr_free(&published_endpoint);
         } else {
@@ -230,11 +219,6 @@ zyre_node_start (zyre_node_t *self)
         //  Start polling on inbox
         zpoller_add(self->poller, self->inbox);
     }
-
-#ifdef ZYRE_BUILD_DRAFT_API
-    if (self->curve_key_secret)
-        assert (zsock_mechanism (self->inbox) == ZMQ_CURVE);
-#endif
 
     return 0;
 }
@@ -389,9 +373,8 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
         #ifdef ZYRE_BUILD_DRAFT_API
         const char *public_key = zsys_public_key_from_endpoint(endpoint);
         if(public_key) {
-            zyre_peer_set_curve_key(peer, public_key);
-            zyre_peer_set_curve_key_public(peer, self->curve_key_public);
-            zyre_peer_set_curve_key_secret(peer, self->curve_key_secret);
+            zyre_peer_set_curve_serverkey(peer, public_key);
+            zyre_peer_set_curve_keypair(peer, self->curve_key);
         }
         #endif
 
@@ -516,16 +499,14 @@ zyre_node_recv_api (zyre_node_t *self)
     }
     else
 #ifdef ZYRE_BUILD_DRAFT_API
-    if (streq (command, "CURVE KEY PUBLIC")) {
-        self->curve_key_public = zmsg_popstr (request);
-        assert (self->curve_key_public);
-        zsys_debug ("setting public key: %s", self->curve_key_public);
-    }
-    else
-    if (streq (command, "CURVE KEY SECRET")) {
-        self->curve_key_secret = zmsg_popstr (request);
-        assert (self->curve_key_secret);
-        zsys_debug ("setting secret key: %s", self->curve_key_secret);
+    if (streq (command, "CURVE KEY PAIR")) {
+        char *curve_key_public = zmsg_popstr (request);
+        char *curve_key_private = zmsg_popstr (request);
+        self->curve_key = zcert_new_from_txt(curve_key_public, curve_key_private);
+        zsys_debug ("setting public key: %s %s", curve_key_public, curve_key_private);
+        zcert_apply(self->curve_key, self->inbox);
+        zsock_set_curve_server(self->inbox, 1);
+        assert (zsock_mechanism (self->inbox) == ZMQ_CURVE);
     }
     else
 #endif
@@ -534,11 +515,10 @@ zyre_node_recv_api (zyre_node_t *self)
         zstr_free (&self->gossip_bind);
         self->gossip_bind = zmsg_popstr (request);
 #ifdef ZYRE_BUILD_DRAFT_API
-        if (self->curve_key_secret) {
-            zsys_info ("Setting gossip keys: %s", self->curve_key_public);
-
-            zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
-            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
+        if (self->curve_key) {
+            zsys_info ("Setting gossip keys: %s", zcert_public_txt(self->curve_key));
+            zstr_sendx(self->gossip, "CURVE KEY SECRET", zcert_public_txt(self->curve_key), NULL);
+            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", zcert_secret_txt(self->curve_key), NULL);
         }
 #endif
         zstr_sendx (self->gossip, "BIND", self->gossip_bind, NULL);
@@ -549,9 +529,9 @@ zyre_node_recv_api (zyre_node_t *self)
         zstr_free (&self->gossip_connect);
         self->gossip_connect = zmsg_popstr (request);
 #ifdef ZYRE_BUILD_DRAFT_API
-        if (self->curve_key_secret) {
-            zstr_sendx(self->gossip, "CURVE KEY SECRET", self->curve_key_secret, NULL);
-            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", self->curve_key_public, NULL);
+        if (self->curve_key) {
+            zstr_sendx(self->gossip, "CURVE KEY SECRET", zcert_public_txt(self->curve_key), NULL);
+            zstr_sendx(self->gossip, "CURVE KEY PUBLIC", zcert_secret_txt(self->curve_key), NULL);
         }
 #endif
         zstr_sendx (self->gossip, "CONNECT", self->gossip_connect, NULL);
@@ -1101,8 +1081,8 @@ zyre_node_actor (zsock_t *pipe, void *args)
                     beacon.port = htons(self->port);
                     zuuid_export(self->uuid, beacon.uuid);
 #ifdef ZYRE_BUILD_DRAFT_API
-                    if (self->curve_key_public) {
-                        beacon.curve_key = self->curve_key_public;
+                    if (self->curve_key) {
+                        beacon.curve_key = (char *)zcert_public_txt(self->curve_key);
                     }
 #endif
                     zsock_send(self->beacon, "sbi", "PUBLISH",

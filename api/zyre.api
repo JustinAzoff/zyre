@@ -102,12 +102,9 @@
         <return type = "integer" />
     </method>
 
-    <method name = "set curve key public">
-        <argument name = "key" type = "string"></argument>
-    </method>
-
-    <method name = "set curve key secret">
-        <argument name = "key" type = "string"></argument>
+    <method name = "set curve key pair">
+        <argument name = "public key" type = "string"></argument>
+        <argument name = "private key" type = "string"></argument>
     </method>
 
     <method name = "gossip bind">
