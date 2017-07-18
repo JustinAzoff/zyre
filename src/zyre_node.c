@@ -505,7 +505,6 @@ zyre_node_recv_api (zyre_node_t *self)
 #ifdef ZYRE_BUILD_DRAFT_API
     if (streq (command, "CURVE KEY PUBLIC")) {
         self->curve_key_public = zmsg_popstr (request);
-        zsys_debug("self->curve_key_public");
         assert (self->curve_key_public);
         zsys_debug ("setting public key: %s", self->curve_key_public);
     }
