@@ -385,6 +385,16 @@ zyre_node_require_peer (zyre_node_t *self, zuuid_t *uuid, const char *endpoint)
 
         peer = zyre_peer_new (self->peers, uuid);
         assert (peer);
+
+        #ifdef ZYRE_BUILD_DRAFT_API
+        const char *public_key = zsys_public_key_from_endpoint(endpoint);
+        if(public_key) {
+            zyre_peer_set_curve_key(peer, public_key);
+            zyre_peer_set_curve_key_public(peer, self->curve_key_public);
+            zyre_peer_set_curve_key_secret(peer, self->curve_key_secret);
+        }
+        #endif
+
         zyre_peer_set_origin (peer, self->name);
         zyre_peer_set_verbose (peer, self->verbose);
         int rc = zyre_peer_connect (peer, self->uuid, endpoint,
