@@ -216,9 +216,9 @@ zyre_node_start (zyre_node_t *self)
 #endif
         //  Start polling on zgossip
         zpoller_add (self->poller, self->gossip);
-        //  Start polling on inbox
-        zpoller_add(self->poller, self->inbox);
     }
+    //  Start polling on inbox
+    zpoller_add(self->poller, self->inbox);
 
     return 0;
 }
@@ -1053,7 +1053,7 @@ zyre_node_actor (zsock_t *pipe, void *args)
     while (!self->terminated) {
 
         // Start beacon as soon as we can
-        if (self->beacon && self->port <= 0) {
+        if (!getenv("NO_BEACON_PLZ") && self->beacon && self->port <= 0) {
             //  Our hostname is provided by zbeacon
             zsock_send(self->beacon, "si", "CONFIGURE", self->beacon_port);
             char *hostname = zstr_recv(self->beacon);
