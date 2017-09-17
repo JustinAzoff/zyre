@@ -910,6 +910,7 @@ zyre_node_recv_peer (zyre_node_t *self)
                 peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), public_key);
             } else {
                 zsys_debug ("ignoring HELLO to avoid security downgrade, does not contain public key");
+                peer = NULL;
             }
         }
 #else
