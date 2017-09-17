@@ -904,7 +904,7 @@ zyre_node_recv_peer (zyre_node_t *self)
             peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), NULL);
         } else {
             zhash_t *headers = zre_msg_headers(msg);
-            char *public_key = zhash_lookup (headers, "X-PUBLICKEY");
+            char *public_key = (char *) zhash_lookup (headers, "X-PUBLICKEY");
             if(public_key) {
                 assert (public_key[0] != 0);
                 peer = zyre_node_require_peer (self, uuid, zre_msg_endpoint (msg), public_key);
